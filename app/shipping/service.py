@@ -8,7 +8,8 @@ from sqlalchemy.orm import selectinload
 from app.common import format_variant_info_label, serialize_shipment, utcnow
 from app.config import settings
 from app.database import AsyncSessionLocal
-from app.models import Order, Shipment
+from app.models import Order, OrderItem, Shipment
+from app.sellers import service as sellers_service
 
 logger = logging.getLogger("shipping")
 
@@ -130,13 +131,28 @@ async def _load_order(db, order_id: str) -> Order | None:
     return None
 
 
-async def _order_weight_kg(order: Order) -> float:
+def _items_for_seller(order: Order, seller_id: int | None) -> list[OrderItem]:
+    items = list(order.items or [])
+    if seller_id is None:
+        return items
+    return [i for i in items if (i.seller_id or 0) == seller_id]
+
+
+async def _order_weight_kg(items: list[OrderItem]) -> float:
     total_grams = 0.0
-    for item in order.items or []:
+    for item in items or []:
         vi = item.variant_info or {}
         grams = vi.get("weight_grams") or 0
         total_grams += float(grams) * item.quantity
     return max(0.5, total_grams / 1000) if total_grams else 0.5
+
+
+def _distinct_seller_ids(order: Order) -> set[int]:
+    ids: set[int] = set()
+    for item in order.items or []:
+        if item.seller_id:
+            ids.add(int(item.seller_id))
+    return ids
 
 
 def _split_name(full_name: str) -> tuple[str, str]:
@@ -148,7 +164,15 @@ def _split_name(full_name: str) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
-def _build_adhoc_payload(order: Order, weight_kg: float) -> dict:
+def _build_adhoc_payload(
+    order: Order,
+    weight_kg: float,
+    *,
+    items: list[OrderItem] | None = None,
+    pickup_location: str | None = None,
+    external_order_id: str | None = None,
+) -> dict:
+    line_items = items if items is not None else list(order.items or [])
     first, last = _split_name(order.customer_name)
     address = order.address_line1 or ""
     if order.address_line2:
@@ -160,7 +184,7 @@ def _build_adhoc_payload(order: Order, weight_kg: float) -> dict:
     length = float(settings.SHIPROCKET_DEFAULT_LENGTH)
     breadth = float(settings.SHIPROCKET_DEFAULT_BREADTH)
     height = float(settings.SHIPROCKET_DEFAULT_HEIGHT)
-    for i in order.items or []:
+    for i in line_items:
         info = i.variant_info if isinstance(i.variant_info, dict) else {}
         try:
             length = max(length, float(info.get("length_cm") or 0) or length)
@@ -169,10 +193,14 @@ def _build_adhoc_payload(order: Order, weight_kg: float) -> dict:
         except (TypeError, ValueError):
             pass
 
+    sub_total = sum(float(i.price) * int(i.quantity) for i in line_items)
+
     payload = {
-        "order_id": order.order_id,
+        "order_id": external_order_id or order.order_id,
         "order_date": (order.created_at or utcnow()).strftime("%Y-%m-%d %H:%M"),
-        "pickup_location": settings.SHIPROCKET_PICKUP_LOCATION or "work",
+        "pickup_location": pickup_location
+        or settings.SHIPROCKET_PICKUP_LOCATION
+        or "work",
         "billing_customer_name": first,
         "billing_last_name": last,
         "billing_address": address[:190],
@@ -200,12 +228,12 @@ def _build_adhoc_payload(order: Order, weight_kg: float) -> dict:
                 "units": int(i.quantity),
                 "selling_price": float(i.price),
             }
-            for i in (order.items or [])
+            for i in line_items
         ],
         "payment_method": "Prepaid"
         if (order.payment_method or "").lower() != "cod"
         else "COD",
-        "sub_total": float(order.subtotal or 0),
+        "sub_total": float(sub_total or order.subtotal or 0),
         "length": length,
         "breadth": breadth,
         "height": height,
@@ -252,7 +280,7 @@ async def _maybe_assign_awb(shipment: Shipment) -> None:
         )
 
 
-async def create_shipment(order_id: str) -> dict:
+async def create_shipment(order_id: str, seller_id: int | None = None) -> dict:
     if not shiprocket_configured():
         raise HTTPException(status_code=503, detail="Shiprocket is not configured")
 
@@ -263,10 +291,30 @@ async def create_shipment(order_id: str) -> dict:
         if not order.items:
             raise HTTPException(status_code=400, detail="Order has no items")
 
-        result = await db.execute(
-            select(Shipment).where(Shipment.order_id == order.order_id)
-        )
-        existing = result.scalar_one_or_none()
+        seller_ids = _distinct_seller_ids(order)
+        if seller_id is None:
+            if len(seller_ids) > 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Order has multiple sellers — ship each seller separately",
+                )
+            if len(seller_ids) == 1:
+                seller_id = next(iter(seller_ids))
+
+        items = _items_for_seller(order, seller_id)
+        if not items:
+            raise HTTPException(
+                status_code=400,
+                detail="No line items for this seller on the order",
+            )
+
+        ship_query = select(Shipment).where(Shipment.order_db_id == order.id)
+        if seller_id is not None:
+            ship_query = ship_query.where(Shipment.seller_id == seller_id)
+        else:
+            ship_query = ship_query.where(Shipment.seller_id.is_(None))
+        existing = (await db.execute(ship_query)).scalar_one_or_none()
+
         if (
             existing
             and existing.shiprocket_order_id
@@ -274,18 +322,39 @@ async def create_shipment(order_id: str) -> dict:
         ):
             return serialize_shipment(existing)
 
-        weight_kg = await _order_weight_kg(order)
-        payload = _build_adhoc_payload(order, weight_kg)
+        pickup = settings.SHIPROCKET_PICKUP_LOCATION or "work"
+        if seller_id is not None:
+            seller_pickup = await sellers_service.get_seller_pickup(db, seller_id)
+            if not seller_pickup:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Seller pickup location not found or seller is inactive",
+                )
+            pickup = seller_pickup
+
+        external_id = order.order_id
+        if seller_id is not None and (len(seller_ids) > 1 or seller_id):
+            external_id = f"{order.order_id}-S{seller_id}"
+
+        weight_kg = await _order_weight_kg(items)
+        payload = _build_adhoc_payload(
+            order,
+            weight_kg,
+            items=items,
+            pickup_location=pickup,
+            external_order_id=external_id,
+        )
         logger.info(
-            "Shiprocket create payload for %s pickup=%s phone=%s pincode=%s",
-            order.order_id,
+            "Shiprocket create payload for %s seller=%s pickup=%s phone=%s pincode=%s",
+            external_id,
+            seller_id,
             payload.get("pickup_location"),
             payload.get("billing_phone"),
             payload.get("billing_pincode"),
         )
 
         api_result = await _api("POST", "/orders/create/adhoc", json=payload)
-        logger.info("Shiprocket create response for %s: %s", order.order_id, api_result)
+        logger.info("Shiprocket create response for %s: %s", external_id, api_result)
 
         sr_order_id, sr_shipment_id = _extract_shiprocket_ids(api_result)
         if not sr_order_id:
@@ -298,6 +367,7 @@ async def create_shipment(order_id: str) -> dict:
                 existing = Shipment(
                     order_db_id=order.id,
                     order_id=order.order_id,
+                    seller_id=seller_id,
                 )
                 db.add(existing)
                 await db.flush()
@@ -312,6 +382,7 @@ async def create_shipment(order_id: str) -> dict:
             existing = Shipment(
                 order_db_id=order.id,
                 order_id=order.order_id,
+                seller_id=seller_id,
             )
             db.add(existing)
             await db.flush()
@@ -326,8 +397,9 @@ async def create_shipment(order_id: str) -> dict:
         await db.commit()
         await db.refresh(existing)
         logger.info(
-            "Shiprocket order created for %s → SR %s / shipment %s",
+            "Shiprocket order created for %s seller=%s → SR %s / shipment %s",
             order.order_id,
+            seller_id,
             existing.shiprocket_order_id,
             existing.shiprocket_shipment_id,
         )
@@ -335,7 +407,7 @@ async def create_shipment(order_id: str) -> dict:
 
 
 async def push_order_to_shiprocket(
-    order_id: str, *, raise_on_error: bool = True
+    order_id: str, *, seller_id: int | None = None, raise_on_error: bool = True
 ) -> dict | None:
     """Create Shiprocket order for a store order. Safe for background use."""
     try:
@@ -344,7 +416,7 @@ async def push_order_to_shiprocket(
             if raise_on_error:
                 raise HTTPException(status_code=503, detail="Shiprocket is not configured")
             return None
-        return await create_shipment(order_id)
+        return await create_shipment(order_id, seller_id=seller_id)
     except Exception as exc:
         logger.exception("Shiprocket push failed for %s: %s", order_id, exc)
         if raise_on_error:

@@ -14,38 +14,29 @@ from app.config import settings
 from app.models import Product, ProductVariant
 
 
-FEED_BRAND = "ChairDekho"
+FEED_BRAND = "AFARM"
 
-_BRAND_SUFFIX_RE = re.compile(r"\s*[|\u2013\u2014-]\s*chair\s*dekho(\.com)?\s*$", re.I)
+_BRAND_SUFFIX_RE = re.compile(
+    r"\s*[|\u2013\u2014-]\s*(chair\s*dekho(\.com)?|amakund(\s*producer(\s*company)?(\s*limited)?)?|afarm)\s*$",
+    re.I,
+)
 
 # First match wins; checked against name, then product_type metafield, then category.
 _GOOGLE_CATEGORIES = [
-    (
-        re.compile(r"office|revolving|executive|ergonomic|computer|study", re.I),
-        "Furniture > Office Furniture > Office Chairs",
-    ),
-    (re.compile(r"\bstools?\b", re.I), "Furniture > Chairs > Table & Bar Stools"),
-    (re.compile(r"\btables?\b", re.I), "Furniture > Tables"),
-    (
-        re.compile(r"garden|outdoor|patio|lawn|balcony", re.I),
-        "Furniture > Outdoor Furniture > Outdoor Seating",
-    ),
-    (
-        re.compile(r"dining|cafe|restaurant", re.I),
-        "Furniture > Chairs > Kitchen & Dining Room Chairs",
-    ),
-    (
-        re.compile(r"arm\s*chair|with\s+arms?", re.I),
-        "Furniture > Chairs > Arm Chairs, Recliners & Sleeper Chairs",
-    ),
+    (re.compile(r"wheat|rice|jowar|bajra|ragi|atta|flour|grain", re.I), "Food, Beverages & Tobacco > Food Items > Grains, Rice & Cereal"),
+    (re.compile(r"dal|pulse|lentil|bean|chana|moong", re.I), "Food, Beverages & Tobacco > Food Items > Dried Goods"),
+    (re.compile(r"oil|ghee", re.I), "Food, Beverages & Tobacco > Food Items > Cooking & Baking Ingredients > Cooking Oils"),
+    (re.compile(r"spice|masala|turmeric|chilli", re.I), "Food, Beverages & Tobacco > Food Items > Seasonings & Spices"),
+    (re.compile(r"vegetable|onion|potato|tomato", re.I), "Food, Beverages & Tobacco > Food Items > Fruits & Vegetables"),
+    (re.compile(r"honey|jaggery", re.I), "Food, Beverages & Tobacco > Food Items"),
 ]
-_DEFAULT_GOOGLE_CATEGORY = "Furniture > Chairs"
+_DEFAULT_GOOGLE_CATEGORY = "Food, Beverages & Tobacco > Food Items"
 _KIDS_RE = re.compile(r"\bkids?\b|child|baby", re.I)
 
 
 def _site_url() -> str:
     """Storefront origin for product links; must match the canonical (non-www) URLs."""
-    url = (settings.FRONTEND_URL or "https://chairdekho.in").rstrip("/")
+    url = (settings.FRONTEND_URL or "http://localhost:3000").rstrip("/")
     return re.sub(r"^(https?://)www\.", r"\1", url)
 
 

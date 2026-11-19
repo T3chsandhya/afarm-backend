@@ -24,7 +24,7 @@ async def send_otp_to_phone(db: AsyncSession, phone: str, name: str = "") -> dic
 
     await db.execute(delete(OTP).where(OTP.phone == normalized))
 
-    if settings.OTP_DEBUG:
+    if settings.otp_debug_enabled:
         otp_code = "1234"
     else:
         otp_code = _generate_otp_code(settings.OTP_LENGTH)
@@ -41,7 +41,7 @@ async def send_otp_to_phone(db: AsyncSession, phone: str, name: str = "") -> dic
     )
     await db.commit()
 
-    if not settings.OTP_DEBUG:
+    if not settings.otp_debug_enabled:
         try:
             await send_otp_sms(normalized, otp_code)
         except Exception as exc:
@@ -64,7 +64,7 @@ async def send_otp_to_phone(db: AsyncSession, phone: str, name: str = "") -> dic
         "message": "OTP sent to your mobile number.",
         "phone": normalized,
     }
-    if settings.OTP_DEBUG:
+    if settings.otp_debug_enabled:
         response["otp"] = otp_code
         response["debug"] = True
 

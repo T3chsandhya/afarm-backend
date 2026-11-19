@@ -7,7 +7,7 @@ _ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "ChairDekho"
+    APP_NAME: str = "AFARM"
     ENVIRONMENT: str = "development"
     API_V1_PREFIX: str = "/api/v1"
     FRONTEND_URL: str = "http://localhost:3000"
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = ""
 
     DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/chairdekho"
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/afarm"
     )
 
     JWT_SECRET_KEY: str = "change-me-in-production"
@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     OTP_EXPIRE_MINUTES: int = 10
     OTP_LENGTH: int = 4
+    # When enabled (and not production), OTP is always 1234 and SMS is skipped.
     OTP_DEBUG: bool = True
 
     RENFLAIR_API_KEY: str = ""
@@ -39,13 +40,13 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_FROM_NUMBER: str = ""
 
-    ADMIN_EMAIL: str = "admin@chairdekho.in"
+    ADMIN_EMAIL: str = "amakundproducerorganisation@gmail.com"
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "admin"
     # Locked storefront / notification identity (shown in Admin → Settings)
-    BRAND_NAME: str = "ChairDekho"
-    ADMIN_NOTIFY_PHONE: str = "9699164131"
-    ADMIN_NOTIFY_EMAIL: str = "brjangu29@gmail.com"
+    BRAND_NAME: str = "AFARM"
+    ADMIN_NOTIFY_PHONE: str = "9876543210"
+    ADMIN_NOTIFY_EMAIL: str = "amakundproducerorganisation@gmail.com"
 
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
@@ -95,12 +96,15 @@ class Settings(BaseSettings):
     DELHIVERY_DEFAULT_BREADTH: float = 20
     DELHIVERY_DEFAULT_HEIGHT: float = 8
     DELHIVERY_SELLER_GSTIN: str = ""
-    DELHIVERY_HSN_CODE: str = "9401"
+    DELHIVERY_HSN_CODE: str = "7117"
 
-    # Media storage: "auto" uses BunnyCDN when configured, otherwise local disk
-    STORAGE_BACKEND: str = "auto"
+    # Media storage: "local" = disk under UPLOAD_DIR (AFARM default). "bunny" only if explicitly set.
+    STORAGE_BACKEND: str = "local"
     # Local upload directory; relative paths resolve against the backend root
-    UPLOAD_DIR: str = ""
+    UPLOAD_DIR: str = "uploads"
+    # Raster uploads are re-encoded to WebP (see app.storage.optimize)
+    IMAGE_UPLOAD_WEBP_QUALITY: int = 82
+    IMAGE_UPLOAD_MAX_EDGE: int = 1920
 
     BUNNY_STORAGE_ZONE: str = ""
     BUNNY_STORAGE_API_KEY: str = ""
@@ -117,25 +121,24 @@ class Settings(BaseSettings):
     GOOGLE_PLACES_API_KEY: str = ""
     # Optional; when empty the place is looked up once from GOOGLE_PLACE_QUERY
     GOOGLE_PLACE_ID: str = ""
-    GOOGLE_PLACE_QUERY: str = (
-        "Chairdekho, Umadevi Mandir, Bolinj Road, Nalasopara West, Vasai-Virar"
-    )
+    GOOGLE_PLACE_QUERY: str = "AFARM Farmer Producer Organisation Maharashtra"
     # Business Profile → "Ask for reviews" link; falls back to a writereview URL from the place id
     GOOGLE_REVIEW_URL: str = ""
     GOOGLE_REVIEWS_CACHE_HOURS: float = 12
-
-    # One-click switch between this admin panel and the paired store's admin.
-    # The same ADMIN_SWITCH_SECRET (32+ chars) must be set on both backends; empty disables it.
-    ADMIN_SWITCH_SECRET: str = ""
-    ADMIN_SWITCH_SITE: str = "chairdekho"
-    ADMIN_SWITCH_TARGET: str = "chakladekho"
-    ADMIN_SWITCH_TARGET_URL: str = "https://www.chakladekho.com"
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def otp_debug_enabled(self) -> bool:
+        """Fixed 1234 OTP for local/dev only; real SMS OTP in production."""
+        env = (self.ENVIRONMENT or "development").strip().lower()
+        if env in ("production", "prod"):
+            return False
+        return bool(self.OTP_DEBUG)
 
     @property
     def cors_origins(self) -> list[str]:

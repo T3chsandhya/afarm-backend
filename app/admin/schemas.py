@@ -69,10 +69,9 @@ class ProductCreateRequest(BaseModel):
     variants: Optional[list[ProductVariant]] = []
     metafields: Optional[dict[str, str]] = {}
     colors: Optional[list[ProductColorSwatch]] = None
-    color_group_id: Optional[str] = None
-    color_sibling_ids: Optional[list[int]] = None
     seo_title: Optional[str] = Field(default=None, max_length=200)
     seo_description: Optional[str] = Field(default=None, max_length=320)
+    seller_id: Optional[int] = None
 
 
 class ProductUpdateRequest(BaseModel):
@@ -94,10 +93,9 @@ class ProductUpdateRequest(BaseModel):
     variants: Optional[list[ProductVariant]] = None
     metafields: Optional[dict[str, str]] = None
     colors: Optional[list[ProductColorSwatch]] = None
-    color_group_id: Optional[str] = None
-    color_sibling_ids: Optional[list[int]] = None
     seo_title: Optional[str] = Field(default=None, max_length=200)
     seo_description: Optional[str] = Field(default=None, max_length=320)
+    seller_id: Optional[int] = None
 
 
 class ProductResponse(BaseModel):

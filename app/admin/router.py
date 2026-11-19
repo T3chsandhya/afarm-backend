@@ -46,11 +46,11 @@ async def get_brand_settings(_=Depends(get_current_admin)):
     from app.config import settings
 
     return {
-        "brand_name": settings.BRAND_NAME or "ChairDekho",
-        "phone": settings.ADMIN_NOTIFY_PHONE or "9699164131",
+        "brand_name": settings.BRAND_NAME or "AFARM",
+        "phone": settings.ADMIN_NOTIFY_PHONE or "9876543210",
         "email": settings.ADMIN_NOTIFY_EMAIL or "brjangu29@gmail.com",
         "locked": True,
-        "otp_enabled": bool(settings.RENFLAIR_API_KEY) and not settings.OTP_DEBUG,
+        "otp_enabled": bool(settings.RENFLAIR_API_KEY) and not settings.otp_debug_enabled,
         "order_sms_enabled": bool(settings.RENFLAIR_API_KEY),
     }
 
@@ -309,12 +309,69 @@ async def admin_update_shipment(
 
 @router.post("/orders/{order_id}/shiprocket")
 async def admin_push_order_shiprocket(
-    order_id: str, _=Depends(get_current_admin)
+    order_id: str,
+    seller_id: int | None = Query(None),
+    _=Depends(get_current_admin),
 ):
-    """Manually push / re-sync an order to Shiprocket."""
+    """Push an order (or one seller's lines) to Shiprocket."""
     return await shipping_service.push_order_to_shiprocket(
-        order_id, raise_on_error=True
+        order_id, seller_id=seller_id, raise_on_error=True
     )
+
+
+@router.get("/sellers")
+async def admin_list_sellers(
+    _=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.sellers import service as sellers_service
+
+    return {"sellers": await sellers_service.list_sellers_with_stats(db)}
+
+
+@router.get("/sellers/options")
+async def admin_seller_options(
+    _=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.sellers import service as sellers_service
+
+    return {"sellers": await sellers_service.list_sellers_minimal(db)}
+
+
+@router.post("/sellers")
+async def admin_create_seller(
+    body: dict,
+    _=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.sellers import service as sellers_service
+
+    return await sellers_service.create_seller(
+        db, body.get("name", ""), body.get("pickup_location", "")
+    )
+
+
+@router.patch("/sellers/{seller_id}")
+async def admin_update_seller(
+    seller_id: int,
+    body: dict,
+    _=Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.sellers import service as sellers_service
+
+    updated = await sellers_service.update_seller(
+        db,
+        seller_id,
+        name=body.get("name") if "name" in body else None,
+        pickup_location=body.get("pickup_location")
+        if "pickup_location" in body
+        else None,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Seller not found")
+    return updated
 
 
 @router.post("/orders/{order_id}/shipmozo")

@@ -1,6 +1,5 @@
 import logging
 import re
-import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
 import bcrypt
@@ -12,7 +11,6 @@ from sqlalchemy.orm import selectinload
 from app.auth.utils import create_access_token
 from app.common import (
     serialize_admin,
-    serialize_color_sibling,
     serialize_order,
     serialize_payment,
     serialize_product,
@@ -107,80 +105,11 @@ _PRODUCT_WRITE_FIELDS = frozenset(
         "tags",
         "metafields",
         "colors",
-        "color_group_id",
         "seo_title",
         "seo_description",
+        "seller_id",
     }
 )
-
-
-async def attach_color_siblings(db: AsyncSession, products: list[dict]) -> list[dict]:
-    group_ids = {p.get("color_group_id") for p in products if p.get("color_group_id")}
-    if not group_ids:
-        return products
-
-    result = await db.execute(
-        select(Product)
-        .options(selectinload(Product.images))
-        .where(
-            Product.color_group_id.in_(group_ids),
-            Product.is_active == True,  # noqa: E712
-        )
-    )
-    by_group: dict[str, list] = {}
-    for p in result.scalars().all():
-        by_group.setdefault(p.color_group_id, []).append(serialize_color_sibling(p))
-
-    for item in products:
-        gid = item.get("color_group_id")
-        if not gid:
-            item["color_siblings"] = []
-            continue
-        siblings = by_group.get(gid, [])
-        item["color_siblings"] = [
-            {**s, "is_current": str(s["id"]) == str(item["id"])} for s in siblings
-        ]
-    return products
-
-
-async def sync_color_group(
-    db: AsyncSession,
-    product: Product,
-    sibling_ids: list | None,
-) -> None:
-    if sibling_ids is None:
-        return
-
-    ids: list[int] = []
-    for raw in sibling_ids:
-        try:
-            cid = int(raw)
-        except (TypeError, ValueError):
-            continue
-        if cid > 0 and cid != product.id and cid not in ids:
-            ids.append(cid)
-
-    old_group = product.color_group_id
-    if old_group:
-        existing = (
-            await db.execute(select(Product).where(Product.color_group_id == old_group))
-        ).scalars().all()
-        keep = set(ids) | {product.id}
-        for p in existing:
-            if p.id not in keep:
-                p.color_group_id = None
-
-    if not ids:
-        product.color_group_id = None
-        return
-
-    group_id = old_group or str(uuid.uuid4())
-    product.color_group_id = group_id
-    siblings = (
-        await db.execute(select(Product).where(Product.id.in_(ids)))
-    ).scalars().all()
-    for p in siblings:
-        p.color_group_id = group_id
 
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -457,7 +386,6 @@ async def get_all_products(
     query = query.order_by(Product.created_at.desc()).offset((page - 1) * limit).limit(limit)
     result = await db.execute(query)
     products = [serialize_product(p) for p in result.scalars().all()]
-    products = await attach_color_siblings(db, products)
     return {"products": products, "total": total, "page": page, "limit": limit}
 
 
@@ -469,15 +397,14 @@ async def get_product_by_id(db: AsyncSession, product_id: int) -> dict | None:
             selectinload(Product.variants).selectinload(ProductVariant.options),
             selectinload(Product.category_rel),
             selectinload(Product.categories_m2m),
+            selectinload(Product.seller),
         )
         .where(Product.id == product_id)
     )
     product = result.scalar_one_or_none()
     if not product:
         return None
-    data = serialize_product(product)
-    await attach_color_siblings(db, [data])
-    return data
+    return serialize_product(product)
 
 
 async def create_product(db: AsyncSession, data: dict) -> dict:
@@ -490,7 +417,7 @@ async def create_product(db: AsyncSession, data: dict) -> dict:
         category_ids = data.pop("category_ids", None)
         category_id = data.pop("category_id", None)
         data.pop("category", None)
-        sibling_ids = data.pop("color_sibling_ids", None)
+        data.pop("color_sibling_ids", None)
         data.pop("color_group_id", None)
         # Drop any non-column leftovers from the request body
         data.pop("images", None)
@@ -528,8 +455,6 @@ async def create_product(db: AsyncSession, data: dict) -> dict:
         await category_service.sync_product_categories(
             db, product, ids, primary_id=primary_id
         )
-        await sync_color_group(db, product, sibling_ids)
-
         for var_data in variants_data:
             var_name = (var_data.get("name") or "").strip()[:100]
             if not var_name:
@@ -702,8 +627,7 @@ async def update_product(db: AsyncSession, product_id: int, data: dict) -> dict 
     category_ids = data.pop("category_ids", None) if has_category_ids else None
     category_id = data.pop("category_id", None) if has_category_id else None
     data.pop("category", None)
-    has_siblings = "color_sibling_ids" in data
-    sibling_ids = data.pop("color_sibling_ids", None) if has_siblings else None
+    data.pop("color_sibling_ids", None)
     data.pop("color_group_id", None)
     if "colors" in data:
         data["colors"] = _normalize_colors(data.get("colors"))
@@ -722,16 +646,17 @@ async def update_product(db: AsyncSession, product_id: int, data: dict) -> dict 
             primary_id=ids[0] if ids else None,
         )
 
+    if "seller_id" in data:
+        product.seller_id = data.get("seller_id")
     for key, value in data.items():
+        if key == "seller_id":
+            continue
         if hasattr(product, key) and value is not None:
             setattr(product, key, value)
     if "colors" in data:
         product.colors = data["colors"]
     if "name" in data and data["name"]:
         product.slug = slugify(data["name"])
-
-    if has_siblings:
-        await sync_color_group(db, product, sibling_ids)
 
     if variants_data is not None:
         for v in list(product.variants):
@@ -888,7 +813,9 @@ async def remove_product_image(
 async def get_all_orders(
     db: AsyncSession, page: int = 1, limit: int = 20, status: str | None = None
 ) -> dict:
-    query = select(Order).options(selectinload(Order.items))
+    query = select(Order).options(
+        selectinload(Order.items), selectinload(Order.shipments)
+    )
     count_query = select(func.count(Order.id))
     if status:
         query = query.where(Order.order_status == status)
@@ -907,7 +834,7 @@ async def update_order_status(
         raise HTTPException(status_code=400, detail="Status is required")
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items))
+        .options(selectinload(Order.items), selectinload(Order.shipments))
         .where(Order.order_id == order_id)
     )
     order = result.scalar_one_or_none()

@@ -199,7 +199,7 @@ async def _create_payu_order(checkout: dict, customer: dict, user_id: int | None
     firstname = (customer.get("name") or "Customer")[:60]
     email = _customer_email(customer)
     phone = "".join(ch for ch in str(customer.get("mobile") or "") if ch.isdigit())[-10:]
-    productinfo = "ChairDekho Order"
+    productinfo = f"{settings.BRAND_NAME or 'AFARM'} Order"
     udf1 = str(user_id or "")
     key = settings.PAYU_KEY
     salt = settings.PAYU_SALT

@@ -1,4 +1,4 @@
-"""Media storage: local disk by default, BunnyCDN when it is configured."""
+"""Media storage: local disk by default (optimized WebP). Bunny only if STORAGE_BACKEND=bunny."""
 
 from fastapi import UploadFile
 
@@ -16,13 +16,13 @@ __all__ = [
 
 
 def active_backend_name(*, bunny_configured: bool | None = None) -> str:
-    preference = (get_settings().STORAGE_BACKEND or "auto").strip().lower()
-    if preference in ("local", "bunny"):
-        return preference
-
-    if bunny_configured is None:
-        bunny_configured = bunny.is_configured()
-    return "bunny" if bunny_configured else "local"
+    preference = (get_settings().STORAGE_BACKEND or "local").strip().lower()
+    if preference == "bunny":
+        if bunny_configured is None:
+            bunny_configured = bunny.is_configured()
+        return "bunny" if bunny_configured else "local"
+    # local, auto, or unknown → always disk (no silent CDN switch)
+    return "local"
 
 
 def _backend():

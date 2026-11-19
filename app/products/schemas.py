@@ -43,7 +43,6 @@ class ProductBase(BaseModel):
     variants: list[ProductVariant] = []
     metafields: dict[str, str] = {}
     colors: list[ProductColorSwatch] = []
-    color_group_id: str | None = None
 
 
 class ProductCreate(ProductBase):
@@ -68,18 +67,6 @@ class ProductUpdate(BaseModel):
     variants: list[ProductVariant] | None = None
     metafields: dict[str, str] | None = None
     colors: list[ProductColorSwatch] | None = None
-    color_group_id: str | None = None
-
-
-class ColorSibling(BaseModel):
-    id: str
-    slug: str
-    name: str
-    colors: list[ProductColorSwatch] = []
-    image: str | None = None
-    price: float | None = None
-    mrp: float | None = None
-    is_current: bool = False
 
 
 class ProductResponse(ProductBase):
@@ -91,7 +78,6 @@ class ProductResponse(ProductBase):
     category_slug: str | None = None
     category_ids: list[int] = []
     categories: list[dict] = []
-    color_siblings: list[ColorSibling] = []
     seo_title: str | None = ""
     seo_description: str | None = ""
     updated_at: str | None = None

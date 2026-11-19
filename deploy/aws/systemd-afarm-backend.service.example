@@ -1,0 +1,15 @@
+[Unit]
+Description=AFARM FastAPI backend
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/srv/afarm/afarm-backend
+Environment=PATH=/srv/afarm/afarm-backend/.venv/bin
+ExecStart=/srv/afarm/afarm-backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8100
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

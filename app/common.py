@@ -44,26 +44,6 @@ def _normalize_colors(raw) -> list[dict]:
     return out[:6]
 
 
-def serialize_color_sibling(product) -> dict:
-    images = []
-    try:
-        state = sa_inspect(product)
-        if "images" not in state.unloaded:
-            images = [img.url for img in (product.images or [])]
-    except Exception:
-        pass
-    colors = _normalize_colors(getattr(product, "colors", None))
-    return {
-        "id": str(product.id),
-        "slug": product.slug,
-        "name": product.name,
-        "colors": colors,
-        "image": images[0] if images else None,
-        "price": product.price,
-        "mrp": product.mrp,
-    }
-
-
 def serialize_product(product, include_relations=True) -> dict:
     def _loaded(name: str):
         """Return relationship only if already eagerly loaded (async-safe)."""
@@ -95,13 +75,16 @@ def serialize_product(product, include_relations=True) -> dict:
         "is_active": product.is_active,
         "metafields": product.metafields or {},
         "colors": _normalize_colors(getattr(product, "colors", None)),
-        "color_group_id": getattr(product, "color_group_id", None),
-        "color_siblings": [],
         "seo_title": getattr(product, "seo_title", None) or "",
         "seo_description": getattr(product, "seo_description", None) or "",
+        "seller_id": getattr(product, "seller_id", None),
+        "seller_name": None,
         "created_at": product.created_at.isoformat() if product.created_at else None,
         "updated_at": product.updated_at.isoformat() if product.updated_at else None,
     }
+    seller_rel = _loaded("seller")
+    if seller_rel is not None:
+        data["seller_name"] = getattr(seller_rel, "name", None)
     cat_rel = _loaded("category_rel")
     if cat_rel is not None:
         data["category_slug"] = getattr(cat_rel, "slug", None)
@@ -199,13 +182,18 @@ def format_variant_info_label(variant_info) -> str:
 
 
 def serialize_order(order) -> dict:
+    shipments_data: list[dict] = []
     shipment_data = None
     try:
         insp = sa_inspect(order)
-        if "shipment" not in insp.unloaded:
-            rel = order.shipment
-            shipment_data = serialize_shipment(rel) if rel else None
+        if "shipments" not in insp.unloaded:
+            rel = order.shipments or []
+            shipments_data = [serialize_shipment(s) for s in rel if s]
+            shipment_data = shipments_data[0] if len(shipments_data) == 1 else None
+            if len(shipments_data) > 1:
+                shipment_data = None
     except Exception:
+        shipments_data = []
         shipment_data = None
 
     return {
@@ -246,12 +234,15 @@ def serialize_order(order) -> dict:
                 "qty": item.quantity,
                 "image": item.image,
                 "variant_info": item.variant_info,
+                "seller_id": getattr(item, "seller_id", None),
+                "seller_name": getattr(item, "seller_name", None),
             }
             for item in (order.items or [])
         ],
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "updated_at": order.updated_at.isoformat() if order.updated_at else None,
         "shipment": shipment_data,
+        "shipments": shipments_data,
     }
 
 
@@ -365,6 +356,7 @@ def serialize_shipment(shipment) -> dict:
         "shiprocket_order_id": shipment.shiprocket_order_id,
         "shiprocket_shipment_id": shipment.shiprocket_shipment_id,
         "shipmozo_reference_id": getattr(shipment, "shipmozo_reference_id", None),
+        "seller_id": getattr(shipment, "seller_id", None),
         "created_at": shipment.created_at.isoformat() if shipment.created_at else None,
         "updated_at": shipment.updated_at.isoformat() if shipment.updated_at else None,
     }

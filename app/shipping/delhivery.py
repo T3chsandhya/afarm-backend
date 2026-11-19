@@ -142,7 +142,7 @@ def _build_manifest(order: Order, reference: str) -> dict:
         "shipment_height": str(height),
         "shipping_mode": _clean(settings.DELHIVERY_SHIPPING_MODE) or "Surface",
         "address_type": "home",
-        "seller_name": "ChairDekho",
+        "seller_name": settings.BRAND_NAME or "AFARM",
         "seller_add": "",
         "seller_inv": order.order_id,
         "waybill": "",

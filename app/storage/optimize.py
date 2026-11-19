@@ -7,14 +7,20 @@ import logging
 
 from fastapi import HTTPException
 
+from app.config import get_settings
+
 logger = logging.getLogger("storage")
 
-# Raster formats we re-encode to WebP. GIFs kept as-is (may be animated).
-_CONVERTIBLE = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+# Raster formats we re-encode to WebP. Animated GIFs kept as-is.
+_CONVERTIBLE = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
 
-# High visual quality; still much smaller than typical PNG/JPEG uploads.
-_WEBP_QUALITY = 85
-_MAX_EDGE = 2400
+
+def _webp_quality() -> int:
+    return max(50, min(95, int(get_settings().IMAGE_UPLOAD_WEBP_QUALITY or 82)))
+
+
+def _max_edge() -> int:
+    return max(800, min(4000, int(get_settings().IMAGE_UPLOAD_MAX_EDGE or 1920)))
 
 
 def optimize_image_bytes(
@@ -54,8 +60,9 @@ def optimize_image_bytes(
 
             w, h = img.size
             longest = max(w, h)
-            if longest > _MAX_EDGE:
-                scale = _MAX_EDGE / float(longest)
+            max_edge = _max_edge()
+            if longest > max_edge:
+                scale = max_edge / float(longest)
                 img = img.resize(
                     (max(1, int(w * scale)), max(1, int(h * scale))),
                     Image.Resampling.LANCZOS,
@@ -64,7 +71,7 @@ def optimize_image_bytes(
             out = io.BytesIO()
             save_kwargs = {
                 "format": "WEBP",
-                "quality": _WEBP_QUALITY,
+                "quality": _webp_quality(),
                 "method": 6,
             }
             if img.mode == "RGBA":

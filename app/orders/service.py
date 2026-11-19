@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.common import serialize_order, utcnow
 from app.database import AsyncSessionLocal
-from app.models import Order, OrderItem, Product, ProductVariant, ProductVariantOption
+from app.models import Order, OrderItem, Product, ProductVariant, ProductVariantOption, Seller
 from app.orders.notifications import notify_order_placed
 from app.auth import service as auth_service
 
@@ -177,7 +177,7 @@ async def assert_stock_available(items: list[dict]) -> None:
 async def _load_order(db: AsyncSession, order_id: str) -> Order | None:
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items), selectinload(Order.shipment))
+        .options(selectinload(Order.items), selectinload(Order.shipments))
         .where(Order.order_id == order_id)
     )
     order = result.scalar_one_or_none()
@@ -186,7 +186,7 @@ async def _load_order(db: AsyncSession, order_id: str) -> Order | None:
     if order_id.isdigit():
         result = await db.execute(
             select(Order)
-            .options(selectinload(Order.items), selectinload(Order.shipment))
+            .options(selectinload(Order.items), selectinload(Order.shipments))
             .where(Order.id == int(order_id))
         )
         return result.scalar_one_or_none()
@@ -294,12 +294,32 @@ async def create_customer_order(
         db.add(order)
         await db.flush()
 
+        product_ids = [
+            p
+            for p in (_parse_product_id(i.get("product_id")) for i in normalized)
+            if p
+        ]
+        seller_by_product: dict[int, tuple[int | None, str | None]] = {}
+        if product_ids:
+            rows = (
+                await db.execute(
+                    select(Product.id, Product.seller_id, Seller.name)
+                    .outerjoin(Seller, Seller.id == Product.seller_id)
+                    .where(Product.id.in_(product_ids))
+                )
+            ).all()
+            for pid, seller_id, seller_name in rows:
+                seller_by_product[int(pid)] = (seller_id, seller_name)
+
         for item in normalized:
             pid = _parse_product_id(item.get("product_id"))
             slug = item.get("slug")
             if not slug and pid:
                 prod_row = await db.execute(select(Product.slug).where(Product.id == pid))
                 slug = prod_row.scalar_one_or_none()
+            item_seller_id, item_seller_name = (
+                seller_by_product.get(pid, (None, None)) if pid else (None, None)
+            )
             db.add(
                 OrderItem(
                     order_id=order.id,
@@ -310,6 +330,8 @@ async def create_customer_order(
                     quantity=item["qty"],
                     image=item.get("image"),
                     variant_info=item.get("variant_info"),
+                    seller_id=item_seller_id,
+                    seller_name=item_seller_name,
                 )
             )
 
@@ -332,9 +354,28 @@ async def create_customer_order(
             from app.config import settings as app_settings
             from app.shipping import service as shipping_service
 
-            if app_settings.SHIPROCKET_AUTO_PUSH and shipping_service.shiprocket_configured():
+            seller_ids_on_order = {
+                sid
+                for sid, _ in seller_by_product.values()
+                if sid
+            }
+            if (
+                app_settings.SHIPROCKET_AUTO_PUSH
+                and shipping_service.shiprocket_configured()
+                and len(seller_ids_on_order) <= 1
+            ):
+                only_seller = (
+                    next(iter(seller_ids_on_order)) if seller_ids_on_order else None
+                )
                 shipment_data = await shipping_service.push_order_to_shiprocket(
-                    order.order_id, raise_on_error=False
+                    order.order_id,
+                    seller_id=only_seller,
+                    raise_on_error=False,
+                )
+            elif len(seller_ids_on_order) > 1:
+                logger.info(
+                    "Shiprocket auto-push skipped — multi-seller order %s",
+                    order.order_id,
                 )
         except Exception as exc:
             logger.warning("Shiprocket auto-push failed: %s", exc)
@@ -448,7 +489,7 @@ async def update_status(order_id: str, status: str) -> dict:
 async def list_user_orders(db: AsyncSession, user_id: int, limit: int = 20) -> list[dict]:
     result = await db.execute(
         select(Order)
-        .options(selectinload(Order.items), selectinload(Order.shipment))
+        .options(selectinload(Order.items), selectinload(Order.shipments))
         .where(Order.user_id == user_id)
         .order_by(Order.created_at.desc())
         .limit(limit)
@@ -462,7 +503,7 @@ async def list_orders_paginated(
 ) -> dict:
     async with AsyncSessionLocal() as db:
         query = select(Order).options(
-            selectinload(Order.items), selectinload(Order.shipment)
+            selectinload(Order.items), selectinload(Order.shipments)
         )
         count_query = select(func.count(Order.id))
         if status:

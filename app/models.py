@@ -146,6 +146,25 @@ class Category(Base):
     )
 
 
+class Seller(Base):
+    __tablename__ = "sellers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Shiprocket pickup location nickname (must match dashboard)
+    pickup_location: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    products: Mapped[list["Product"]] = relationship("Product", back_populates="seller")
+
+
 class Product(Base):
     __tablename__ = "products"
 
@@ -157,6 +176,9 @@ class Product(Base):
     mrp: Mapped[float] = mapped_column(Float, nullable=False)
     category_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    seller_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sellers.id", ondelete="SET NULL"), nullable=True, index=True
     )
     category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     stock: Mapped[int] = mapped_column(Integer, default=0)
@@ -181,6 +203,7 @@ class Product(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    seller: Mapped[Optional["Seller"]] = relationship("Seller", back_populates="products")
     category_rel: Mapped[Optional["Category"]] = relationship(
         "Category", back_populates="products", foreign_keys=[category_id]
     )
@@ -315,8 +338,8 @@ class Order(Base):
     payment: Mapped[Optional["Payment"]] = relationship(
         "Payment", back_populates="order", uselist=False
     )
-    shipment: Mapped[Optional["Shipment"]] = relationship(
-        "Shipment", back_populates="order", uselist=False
+    shipments: Mapped[list["Shipment"]] = relationship(
+        "Shipment", back_populates="order", cascade="all, delete-orphan"
     )
 
 
@@ -334,6 +357,10 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     image: Mapped[Optional[str]] = mapped_column(String(500))
     variant_info: Mapped[Optional[dict]] = mapped_column(JSON)
+    seller_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sellers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    seller_name: Mapped[Optional[str]] = mapped_column(String(255))
 
     order: Mapped["Order"] = relationship("Order", back_populates="items")
 
@@ -427,6 +454,9 @@ class Shipment(Base):
     shiprocket_order_id: Mapped[Optional[str]] = mapped_column(String(100))
     shiprocket_shipment_id: Mapped[Optional[str]] = mapped_column(String(100))
     shipmozo_reference_id: Mapped[Optional[str]] = mapped_column(String(100))
+    seller_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sellers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -434,7 +464,7 @@ class Shipment(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    order: Mapped["Order"] = relationship("Order", back_populates="shipment")
+    order: Mapped["Order"] = relationship("Order", back_populates="shipments")
 
 
 class OTP(Base):

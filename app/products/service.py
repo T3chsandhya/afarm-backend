@@ -142,9 +142,6 @@ async def list_products(
             query.order_by(order_col).offset(skip).limit(page_size)
         )
         items = [serialize_product(p) for p in result.scalars().all()]
-        from app.admin.service import attach_color_siblings
-
-        items = await attach_color_siblings(db, items)
         return {
             "items": items,
             "total": total,
@@ -169,11 +166,7 @@ async def get_product_by_slug(slug: str) -> dict:
         product = result.scalar_one_or_none()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-        data = serialize_product(product)
-        from app.admin.service import attach_color_siblings
-
-        await attach_color_siblings(db, [data])
-        return data
+        return serialize_product(product)
 
 
 async def get_product_by_id(product_id: int | str) -> dict:
@@ -191,11 +184,7 @@ async def get_product_by_id(product_id: int | str) -> dict:
         product = result.scalar_one_or_none()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
-        data = serialize_product(product)
-        from app.admin.service import attach_color_siblings
-
-        await attach_color_siblings(db, [data])
-        return data
+        return serialize_product(product)
 
 
 async def update_product(product_id: int | str, updates: dict) -> dict:

@@ -1,0 +1,46 @@
+# AFARM @ khulega.online — new file only; do not edit other site vhosts.
+# After DNS: certbot --nginx -d afarm.khulega.online -d api.afarm.khulega.online
+
+upstream afarm_frontend {
+    server 127.0.0.1:3100;
+    keepalive 32;
+}
+
+upstream afarm_api {
+    server 127.0.0.1:8100;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name afarm.khulega.online;
+
+    client_max_body_size 25M;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_pass http://afarm_frontend;
+    }
+}
+
+server {
+    listen 80;
+    server_name api.afarm.khulega.online;
+
+    client_max_body_size 25M;
+
+    location / {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://afarm_api;
+    }
+}

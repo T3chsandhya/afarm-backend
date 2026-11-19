@@ -347,6 +347,44 @@ async def connect_db():
         )
         await conn.execute(
             text(
+                """
+                CREATE TABLE IF NOT EXISTS sellers (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    pickup_location VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    position INTEGER DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_id INTEGER "
+                "REFERENCES sellers(id) ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_id INTEGER "
+                "REFERENCES sellers(id) ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_name VARCHAR(255)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE shipments ADD COLUMN IF NOT EXISTS seller_id INTEGER "
+                "REFERENCES sellers(id) ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
                 "ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_title VARCHAR(200)"
             )
         )

@@ -1,0 +1,16 @@
+[Unit]
+Description=AFARM Next.js frontend
+After=network.target afarm-backend.service
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/srv/afarm/afarm-frontend
+Environment=NODE_ENV=production
+Environment=PORT=3100
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
