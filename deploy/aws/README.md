@@ -31,7 +31,8 @@ After first clone: `bash /srv/afarm/afarm-backend/deploy/aws/preflight.sh` (chec
 Amazon Linux 2023 packages (if something is missing):
 
 ```bash
-sudo dnf install -y git python3.11 python3.11-pip postgresql15-server postgresql15 nginx
+sudo dnf install -y git python3.11 postgresql15-server postgresql15 nginx
+# AFARM API requires Python 3.10+ (Amazon Linux default python3 may be 3.9).
 # Node 18+ (use nvm or nodesource if dnf node is too old):
 curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
 sudo dnf install -y nodejs
@@ -106,8 +107,8 @@ On **khulega-online** use **`ec2-user`** (see `INSTANCE-khulega-online.md`).
 ### 7. Nginx + SSL
 
 ```bash
-sudo cp /srv/afarm/afarm-backend/deploy/aws/nginx-afarm.conf.example /etc/nginx/sites-available/afarm
-sudo ln -sf /etc/nginx/sites-available/afarm /etc/nginx/sites-enabled/
+# Amazon Linux: use conf.d (Debian-style sites-enabled may not exist)
+sudo cp /srv/afarm/afarm-backend/deploy/aws/nginx-afarm.conf.example /etc/nginx/conf.d/afarm.conf
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d afarm.khulega.online -d api.afarm.khulega.online
 ```
@@ -147,10 +148,12 @@ ssh ec2-user@13.207.119.202 'cd /srv/afarm/afarm-frontend && bash deploy/aws/dep
 
 ---
 
-## Uploads (local disk)
+## Uploads (S3 + CloudFront)
 
-Product/category/banner images are stored under `afarm-backend/uploads/` (WebP-compressed).  
-They are served at `https://api.afarm.khulega.online/uploads/...`. Back up this folder with your deploy routine — it is not in git.
+Production: set `STORAGE_BACKEND=s3` and follow **[S3-CLOUDFRONT.md](./S3-CLOUDFRONT.md)**.  
+Images are WebP-optimized on upload; URLs point at CloudFront (fast CDN).
+
+`STORAGE_BACKEND=local` keeps files under `afarm-backend/uploads/` at `https://api.afarm.khulega.online/uploads/...` (fine for dev).
 
 ---
 

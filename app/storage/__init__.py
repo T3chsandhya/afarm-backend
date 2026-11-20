@@ -1,9 +1,9 @@
-"""Media storage: local disk by default (optimized WebP). Bunny only if STORAGE_BACKEND=bunny."""
+"""Media storage: local (default), bunny, or s3 + CloudFront."""
 
 from fastapi import UploadFile
 
 from app.config import get_settings
-from app.storage import bunny, local
+from app.storage import bunny, local, s3
 from app.storage.base import ALLOWED_IMAGE_EXT, ALLOWED_VIDEO_EXT
 
 __all__ = [
@@ -15,18 +15,30 @@ __all__ = [
 ]
 
 
-def active_backend_name(*, bunny_configured: bool | None = None) -> str:
+def active_backend_name(
+    *,
+    bunny_configured: bool | None = None,
+    s3_configured: bool | None = None,
+) -> str:
     preference = (get_settings().STORAGE_BACKEND or "local").strip().lower()
     if preference == "bunny":
         if bunny_configured is None:
             bunny_configured = bunny.is_configured()
         return "bunny" if bunny_configured else "local"
-    # local, auto, or unknown → always disk (no silent CDN switch)
+    if preference == "s3":
+        if s3_configured is None:
+            s3_configured = s3.is_configured()
+        return "s3" if s3_configured else "local"
     return "local"
 
 
 def _backend():
-    return bunny if active_backend_name() == "bunny" else local
+    name = active_backend_name()
+    if name == "bunny":
+        return bunny
+    if name == "s3":
+        return s3
+    return local
 
 
 async def upload_file(

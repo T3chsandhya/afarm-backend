@@ -29,7 +29,24 @@ async def ensure_database():
     host = parsed.hostname or "localhost"
     port = parsed.port or 5432
 
-    # Connect to default 'postgres' database
+    # Prefer connecting to the target DB (works when pg_hba is scoped to that DB only).
+    try:
+        conn = await asyncpg.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=db_name,
+        )
+        try:
+            print(f"Database '{db_name}' already exists.")
+        finally:
+            await conn.close()
+        return
+    except asyncpg.InvalidCatalogNameError:
+        print(f"Database '{db_name}' not found; creating via postgres database…")
+
+    # CREATE DATABASE requires a session on an existing DB (usually postgres).
     conn = await asyncpg.connect(
         host=host,
         port=port,

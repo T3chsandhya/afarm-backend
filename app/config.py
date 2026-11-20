@@ -98,13 +98,21 @@ class Settings(BaseSettings):
     DELHIVERY_SELLER_GSTIN: str = ""
     DELHIVERY_HSN_CODE: str = "7117"
 
-    # Media storage: "local" = disk under UPLOAD_DIR (AFARM default). "bunny" only if explicitly set.
+    # Media storage: local | s3 | bunny
     STORAGE_BACKEND: str = "local"
     # Local upload directory; relative paths resolve against the backend root
     UPLOAD_DIR: str = "uploads"
     # Raster uploads are re-encoded to WebP (see app.storage.optimize)
     IMAGE_UPLOAD_WEBP_QUALITY: int = 82
     IMAGE_UPLOAD_MAX_EDGE: int = 1920
+
+    # AWS S3 + CloudFront (STORAGE_BACKEND=s3). On EC2, prefer IAM instance role (leave keys empty).
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_REGION: str = "ap-south-1"
+    AWS_S3_PREFIX: str = ""
+    AWS_CLOUDFRONT_URL: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
 
     BUNNY_STORAGE_ZONE: str = ""
     BUNNY_STORAGE_API_KEY: str = ""

@@ -41,7 +41,9 @@ def _site_url() -> str:
 
 
 def _cdn_base() -> str:
-    return (settings.BUNNY_CDN_URL or "").rstrip("/")
+    from app.storage.cdn import public_cdn_base
+
+    return public_cdn_base()
 
 
 def _abs_image(url: str | None) -> str:
