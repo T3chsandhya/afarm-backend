@@ -1,48 +1,14 @@
 import logging
-from urllib.parse import quote
 
-import httpx
-
-from app.config import settings
-from app.sms.renflair import renflair_failure_message
+from app.sms import exotel
 
 logger = logging.getLogger("sms")
 
-RENFLAIR_OTP_URL = "https://sms.renflair.in/V1.php"
 
-
-async def send_otp_sms(phone: str, otp: str) -> dict:
-    """Send login OTP via Renflair V1 API.
-
-    Message template: "{OTP} is your verification code for {domain}"
-    """
-    if not settings.RENFLAIR_API_KEY:
-        logger.error("RENFLAIR_API_KEY is not configured")
+async def send_otp_sms(phone: str, otp: str, name: str = "") -> dict:
+    """Send login OTP via Exotel (DLT template)."""
+    if not exotel.is_configured():
+        logger.error("Exotel SMS is not configured")
         raise RuntimeError("SMS service is not configured")
 
-    url = (
-        f"{RENFLAIR_OTP_URL}"
-        f"?API={quote(settings.RENFLAIR_API_KEY, safe='')}"
-        f"&PHONE={quote(str(phone), safe='')}"
-        f"&OTP={quote(str(otp), safe='')}"
-    )
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-
-    if resp.status_code >= 400:
-        logger.error("Renflair OTP SMS failed: %s %s", resp.status_code, resp.text)
-        raise RuntimeError("Failed to send OTP SMS")
-
-    try:
-        data = resp.json()
-    except Exception:
-        data = {"raw": resp.text}
-
-    fail_msg = renflair_failure_message(data)
-    if fail_msg:
-        logger.error("Renflair OTP SMS rejected: %s | body=%s", fail_msg, data)
-        raise RuntimeError(fail_msg)
-
-    logger.info("OTP SMS sent to %s", phone[-4:].rjust(10, "*"))
-    return data
+    return await exotel.send_otp_sms(phone, otp, name=name)

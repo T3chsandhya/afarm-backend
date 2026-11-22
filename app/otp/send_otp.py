@@ -18,7 +18,7 @@ def _generate_otp_code(length: int = 4) -> str:
 
 
 async def send_otp_to_phone(db: AsyncSession, phone: str, name: str = "") -> dict:
-    """Generate a 4-digit OTP, store it, and send via Renflair SMS."""
+    """Generate OTP, store it, and send via Exotel SMS (DLT)."""
     normalized = normalize_phone(phone)
     _ = name  # reserved for future personalization
 
@@ -43,14 +43,14 @@ async def send_otp_to_phone(db: AsyncSession, phone: str, name: str = "") -> dic
 
     if not settings.otp_debug_enabled:
         try:
-            await send_otp_sms(normalized, otp_code)
+            await send_otp_sms(normalized, otp_code, name=name)
         except Exception as exc:
             await db.execute(delete(OTP).where(OTP.phone == normalized))
             await db.commit()
             detail = str(exc).strip() or "Failed to send OTP. Please try again."
             # Map provider messages to clearer API errors
             upper = detail.upper()
-            if "INCORRECT API KEY" in upper or "INVALID API KEY" in upper:
+            if "UNAUTHORIZED" in upper or "INCORRECT API KEY" in upper or "INVALID API KEY" in upper:
                 detail = "SMS service misconfigured. Please contact support."
             elif "INSUFFICIENT" in upper or "BALANCE" in upper:
                 detail = "SMS credits exhausted. Please contact support."

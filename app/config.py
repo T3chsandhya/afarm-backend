@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     # When enabled (and not production), OTP is always 1234 and SMS is skipped.
     OTP_DEBUG: bool = True
 
+    # Exotel SMS (login OTP) — Mumbai: api.in.exotel.com
+    EXOTEL_ACCOUNT_SID: str = ""
+    EXOTEL_API_KEY: str = ""
+    EXOTEL_API_TOKEN: str = ""
+    EXOTEL_API_HOST: str = "api.exotel.com"
+    EXOTEL_SMS_SENDER: str = ""
+    EXOTEL_DLT_ENTITY_ID: str = ""
+    EXOTEL_DLT_TEMPLATE_ID: str = ""
+    EXOTEL_SMS_TYPE: str = "transactional"
+    EXOTEL_OTP_BODY_TEMPLATE: str = ""
+
     RENFLAIR_API_KEY: str = ""
 
     EMAILJS_SERVICE_ID: str = ""

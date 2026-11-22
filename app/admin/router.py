@@ -7,6 +7,7 @@ from app.models import VideoProduct
 from app.payments import service as payments_service
 from app.shipping import service as shipping_service
 from app.storage import ALLOWED_IMAGE_EXT, ALLOWED_VIDEO_EXT, upload_file
+from app.sms.exotel import is_configured as exotel_sms_configured
 
 from . import service
 from .schemas import (
@@ -50,7 +51,7 @@ async def get_brand_settings(_=Depends(get_current_admin)):
         "phone": settings.ADMIN_NOTIFY_PHONE or "9876543210",
         "email": settings.ADMIN_NOTIFY_EMAIL or "brjangu29@gmail.com",
         "locked": True,
-        "otp_enabled": bool(settings.RENFLAIR_API_KEY) and not settings.otp_debug_enabled,
+        "otp_enabled": exotel_sms_configured() and not settings.otp_debug_enabled,
         "order_sms_enabled": bool(settings.RENFLAIR_API_KEY),
     }
 
